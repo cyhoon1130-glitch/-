@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전자기 유도 시뮬레이터</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; }
+    body { background-color: #f8f9fa; color: #333; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; color: #1a2b4c; }
+    
+    .container { display: flex; flex-wrap: wrap; gap: 20px; max-width: 1280px; margin: 0 auto; }
+    .panel { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); flex: 1; min-width: 360px; }
+    
+    .control-group { margin-bottom: 12px; }
+    label { display: block; font-weight: bold; margin-bottom: 5px; color: #2c3e50; font-size: 14px; }
+    select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    
+    .radio-group { display: flex; gap: 15px; margin-top: 5px; }
+    .radio-group label { font-weight: normal; cursor: pointer; font-size: 14px; }
+
+    .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+    .btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+    .btn-start { background-color: #28a745; color: white; }
+    .btn-reset { background-color: #dc3545; color: white; }
+    .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; text-align: center; }
+    th, td { border: 1px solid #dee2e6; padding: 6px; }
+    th { background-color: #eef2f7; color: #333; }
+    .highlight-val { font-weight: bold; color: #0066cc; }
+
+    canvas { background: #ffffff; border: 1px solid #d1d8e0; border-radius: 8px; width: 100%; display: block; }
+    
+    .graph-title { font-size: 15px; font-weight: bold; color: #1a2b4c; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .table-section-title { font-size: 13px; font-weight: bold; margin-top: 15px; margin-bottom: 5px; color: #1a2b4c; }
+  </style>
+</head>
+<body>
+
+  <h1>전자기 유도 시뮬레이터</h1>
+
+  <div class="container">
+    <div class="panel">
+      <h3>실험 설정 및 시각화</h3>
+      <hr style="margin: 10px 0;"><br>
+
+      <div class="btn-group">
+        <button id="startBtn" class="btn btn-start" onclick="startExperiment()">▶ 실험 시작</button>
+        <button id="resetBtn" class="btn btn-reset" onclick="resetAll()">↺ 초기화</button>
+      </div>
+
+      <div class="control-group">
+        <label>[조작변인] 자기장의 세기 ($B$):</label>
+        <select id="bStrength" onchange="updateVariables()">
+          <option value="0.5">0.5 T (소형 자석)</option>
+          <option value="1.0" selected>1.0 T (중형 자석)</option>
+          <option value="1.5">1.5 T (대형 자석)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>진입하는 극성 선택:</label>
+        <div class="radio-group">
+          <label><input type="radio" name="polarity" value="N" checked onchange="updatePolarity()"> N극 먼저 진입 (진하게)</label>
+          <label><input type="radio" name="polarity" value="S" onchange="updatePolarity()"> S극 먼저 진입 (연하게)</label>
+        </div>
+      </div>
+
+      <canvas id="simCanvas" style="height: 190px;"></canvas>
+
+      <h4 style="margin-top: 15px;">실험 변수 현황</h4>
+      <table>
+        <tr>
+          <th>구분</th>
+          <th>변수명</th>
+          <th>설정값</th>
+        </tr>
+        <tr>
+          <td><b>조작변인</b></td>
+          <td>자기장의 세기 ($B$)</td>
+          <td id="tableBVal" class="highlight-val">1.0 T</td>
+        </tr>
+        <tr>
+          <td rowspan="3"><b>통제변인</b></td>
+          <td>코일을 감은 횟수 ($N$)</td>
+          <td>400 회</td>
+        </tr>
+        <tr>
+          <td>자석의 속도 ($v$)</td>
+          <td>1 m/s</td>
+        </tr>
+        <tr>
+          <td>코일의 면적 ($A$)</td>
+          <td>0.02 m²</td>
+        </tr>
+        <tr>
+          <td><b>종속변인</b></td>
+          <td>유도 기전력 ($V$)</td>
+          <td id="statusText">대기 중</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="graph-title">📈 [실험] 자기장 세기 및 극성에 따른 유도 기전력 (마우스 호버 가능)</div>
+
+      <canvas id="graphCanvas" style="height: 270px;"></canvas>
+
+      <div class="table-section-title">📌 N극 진입 실험 결과 (진한 색상)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>자기장의 세기</th>
+            <th>최댓값 (+V Peak)</th>
+            <th>최솟값 (-V Peak)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color: #28a745; font-weight: bold;">0.5 T</td>
+            <td id="n-max-0.5" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="n-min-0.5" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+          <tr>
+            <td style="color: #8a2be2; font-weight: bold;">1.0 T</td>
+            <td id="n-max-1.0" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="n-min-1.0" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+          <tr>
+            <td style="color: #d9534f; font-weight: bold;">1.5 T</td>
+            <td id="n-max-1.5" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="n-min-1.5" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="table-section-title">📌 S극 진입 실험 결과 (연한 색상)</div>
+      <table>
+        <thead>
+          <tr>
+            <th>자기장의 세기</th>
+            <th>최댓값 (+V Peak)</th>
+            <th>최솟값 (-V Peak)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color: rgba(40, 167, 69, 0.5); font-weight: bold;">0.5 T</td>
+            <td id="s-max-0.5" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="s-min-0.5" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+          <tr>
+            <td style="color: rgba(138, 43, 226, 0.5); font-weight: bold;">1.0 T</td>
+            <td id="s-max-1.0" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="s-min-1.0" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+          <tr>
+            <td style="color: rgba(217, 83, 79, 0.5); font-weight: bold;">1.5 T</td>
+            <td id="s-max-1.5" style="color:#d9534f; font-weight:bold;">-</td>
+            <td id="s-min-1.5" style="color:#0275d8; font-weight:bold;">-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const simCanvas = document.getElementById('simCanvas');
+    const simCtx = simCanvas.getContext('2d');
+    const graphCanvas = document.getElementById('graphCanvas');
+    const graphCtx = graphCanvas.getContext('2d');
+
+    let B = 1.0;
+    let polarity = 'N';
+    const N = 400;
+    const v = 1;
+    const A = 0.02;
+
+    let isRunning = false;
+    let progress = 0;
+
+    const startX = 60;
+    const targetX = 220;
+    const coilX = 250;
+
+    let currentGraphData = [];
+    let savedGraphs = {};
+    let tableResults = {
+      N: { '0.5': { max: null, min: null }, '1.0': { max: null, min: null }, '1.5': { max: null, min: null } },
+      S: { '0.5': { max: null, min: null }, '1.0': { max: null, min: null }, '1.5': { max: null, min: null } }
+    };
+
+    let currentMaxV = 0;
+    let currentMinV = 0;
+
+    let mousePos = { x: -1, y: -1 };
+    let hoveredPoint = null;
+
+    // N극용 진한 색상과 S극용 연한 색상(투명도 0.45 적용) 맵핑
+    const colorMap = {
+      'N': {
+        '0.5': '#28a745',
+        '1.0': '#8a2be2',
+        '1.5': '#d9534f'
+      },
+      'S': {
+        '0.5': 'rgba(40, 167, 69, 0.45)',
+        '1.0': 'rgba(138, 43, 226, 0.45)',
+        '1.5': 'rgba(217, 83, 79, 0.45)'
+      }
+    };
+
+    function setupHDICanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      ctx.resetTransform();
+      ctx.scale(dpr, dpr);
+      
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
+
+    function initCanvasResolution() {
+      setupHDICanvas(simCanvas, simCtx);
+      setupHDICanvas(graphCanvas, graphCtx);
+    }
+
+    graphCanvas.addEventListener('mousemove', (e) => {
+      const rect = graphCanvas.getBoundingClientRect();
+      mousePos.x = e.clientX - rect.left;
+      mousePos.y = e.clientY - rect.top;
+      if (!isRunning) drawGraph();
+    });
+
+    graphCanvas.addEventListener('mouseleave', () => {
+      mousePos = { x: -1, y: -1 };
+      hoveredPoint = null;
+      if (!isRunning) drawGraph();
+    });
+
+    window.addEventListener('resize', () => {
+      initCanvasResolution();
+      drawSimulation(startX);
+      drawGraph();
+    });
+
+    function updateVariables() {
+      B = parseFloat(document.getElementById('bStrength').value);
+      document.getElementById('tableBVal').innerText = B.toFixed(1) + " T";
+      if (!isRunning) drawSimulation(startX);
+    }
+
+    function updatePolarity() {
+      const radios = document.getElementsByName('polarity');
+      for (let r of radios) {
+        if (r.checked) polarity = r.value;
+      }
+      if (!isRunning) drawSimulation(startX);
+    }
+
+    function startExperiment() {
+      if (isRunning) return;
+      isRunning = true;
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('statusText').innerText = "측정 중...";
+
+      progress = 0;
+      currentGraphData = [];
+      currentMaxV = 0;
+      currentMinV = 0;
+    }
+
+    function resetAll() {
+      isRunning = false;
+      progress = 0;
+      currentGraphData = [];
+      savedGraphs = {};
+
+      tableResults = {
+        N: { '0.5': { max: null, min: null }, '1.0': { max: null, min: null }, '1.5': { max: null, min: null } },
+        S: { '0.5': { max: null, min: null }, '1.0': { max: null, min: null }, '1.5': { max: null, min: null } }
+      };
+
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('statusText').innerText = "대기 중";
+
+      updateTableUI();
+      drawSimulation(startX);
+      drawGraph();
+    }
+
+    function loop() {
+      let currentX = startX;
+
+      if (isRunning) {
+        progress += 0.008;
+
+        if (progress <= 1.0) {
+          let sinVal = Math.sin(progress * Math.PI);
+          currentX = startX + (targetX - startX) * sinVal;
+
+          let poleFactor = (polarity === 'N') ? 1 : -1;
+          let peakV = N * A * B * v * 1.2;
+          let voltage = -1 * poleFactor * peakV * Math.sin(progress * 2 * Math.PI);
+
+          currentGraphData.push({ t: (progress * 0.6).toFixed(3), v: voltage });
+
+          if (voltage > currentMaxV) currentMaxV = voltage;
+          if (voltage < currentMinV) currentMinV = voltage;
+        } else {
+          isRunning = false;
+          progress = 1.0;
+          currentX = startX;
+          document.getElementById('startBtn').disabled = false;
+          document.getElementById('statusText').innerText = "측정 완료";
+
+          const bKey = B.toFixed(1);
+          const fullKey = `${polarity}-${bKey}`;
+          savedGraphs[fullKey] = {
+            data: [...currentGraphData],
+            color: colorMap[polarity][bKey],
+            maxV: currentMaxV,
+            minV: currentMinV,
+            bKey: bKey
+          };
+
+          tableResults[polarity][bKey] = {
+            max: '+' + currentMaxV.toFixed(2) + ' V',
+            min: currentMinV.toFixed(2) + ' V'
+          };
+
+          updateTableUI();
+        }
+      }
+
+      drawSimulation(currentX);
+      drawGraph();
+
+      requestAnimationFrame(loop);
+    }
+
+    function updateTableUI() {
+      ['0.5', '1.0', '1.5'].forEach(bKey => {
+        const nRes = tableResults.N[bKey];
+        document.getElementById(`n-max-${bKey}`).innerText = nRes.max !== null ? nRes.max : '-';
+        document.getElementById(`n-min-${bKey}`).innerText = nRes.min !== null ? nRes.min : '-';
+
+        const sRes = tableResults.S[bKey];
+        document.getElementById(`s-max-${bKey}`).innerText = sRes.max !== null ? sRes.max : '-';
+        document.getElementById(`s-min-${bKey}`).innerText = sRes.min !== null ? sRes.min : '-';
+      });
+    }
+
+    function drawSimulation(mX) {
+      let w = simCanvas.getBoundingClientRect().width;
+      let h = simCanvas.getBoundingClientRect().height;
+      simCtx.clearRect(0, 0, w, h);
+
+      simCtx.strokeStyle = '#d0d7de';
+      simCtx.lineWidth = 1;
+      simCtx.beginPath();
+      simCtx.moveTo(20, 140);
+      simCtx.lineTo(360, 140);
+      simCtx.stroke();
+
+      simCtx.lineWidth = 5;
+      simCtx.strokeStyle = '#B87333';
+      for (let i = -30; i <= 30; i += 12) {
+        simCtx.beginPath();
+        simCtx.ellipse(coilX + i, 90, 12, 38, 0, 0, Math.PI * 2);
+        simCtx.stroke();
+      }
+
+      let mW = 80 * (0.6 + B * 0.4);
+      let mH = 32 * (0.6 + B * 0.4);
+      let mY = 90 - mH / 2;
+
+      let firstColor = (polarity === 'N') ? '#d9534f' : '#0275d8';
+      let secondColor = (polarity === 'N') ? '#0275d8' : '#d9534f';
+
+      simCtx.fillStyle = secondColor;
+      simCtx.fillRect(mX - mW, mY, mW / 2, mH);
+      simCtx.fillStyle = firstColor;
+      simCtx.fillRect(mX - mW / 2, mY, mW / 2, mH);
+
+      simCtx.fillStyle = 'white';
+      simCtx.font = `bold ${12 + B * 2}px sans-serif`;
+      simCtx.textAlign = 'center';
+      simCtx.textBaseline = 'middle';
+      let leftText = (polarity === 'N') ? 'S' : 'N';
+      let rightText = (polarity === 'N') ? 'N' : 'S';
+      simCtx.fillText(leftText, mX - mW + mW / 4, 90);
+      simCtx.fillText(rightText, mX - mW / 4, 90);
+    }
+
+    function drawGraph() {
+      let w = graphCanvas.getBoundingClientRect().width;
+      let h = graphCanvas.getBoundingClientRect().height;
+
+      graphCtx.clearRect(0, 0, w, h);
+
+      let marginLeft = 50;
+      let marginBottom = 32;
+      let graphW = w - marginLeft - 85;
+      let graphH = h - marginBottom - 25;
+      let centerY = 25 + graphH / 2;
+
+      hoveredPoint = null;
+
+      graphCtx.strokeStyle = '#edf0f4';
+      graphCtx.lineWidth = 1;
+
+      for (let y = 25; y <= 25 + graphH; y += graphH / 8) {
+        graphCtx.beginPath();
+        graphCtx.moveTo(marginLeft, y);
+        graphCtx.lineTo(marginLeft + graphW, y);
+        graphCtx.stroke();
+      }
+      for (let x = marginLeft; x <= marginLeft + graphW; x += graphW / 6) {
+        graphCtx.beginPath();
+        graphCtx.moveTo(x, 25);
+        graphCtx.lineTo(x, 25 + graphH);
+        graphCtx.stroke();
+      }
+
+      graphCtx.strokeStyle = '#c2cbcd';
+      graphCtx.lineWidth = 1.2;
+      graphCtx.beginPath();
+      graphCtx.moveTo(marginLeft, centerY);
+      graphCtx.lineTo(marginLeft + graphW, centerY);
+      graphCtx.stroke();
+
+      graphCtx.fillStyle = '#2c3e50';
+      graphCtx.font = 'bold 11px sans-serif';
+      graphCtx.textAlign = 'right';
+      graphCtx.textBaseline = 'middle';
+
+      const yLabels = ["0.4", "0.3", "0.2", "0.1", "0", "-0.1", "-0.2", "-0.3", "-0.4", "-0.5"];
+      yLabels.forEach((label, idx) => {
+        let yPos = 25 + (graphH / 9) * idx;
+        graphCtx.fillText(label, marginLeft - 8, yPos);
+      });
+
+      graphCtx.font = 'bold 12px sans-serif';
+      graphCtx.fillText("전압 (V)", marginLeft - 5, 10);
+
+      graphCtx.textAlign = 'center';
+      graphCtx.textBaseline = 'top';
+      graphCtx.font = 'bold 11px sans-serif';
+      
+      for (let i = 0; i <= 6; i++) {
+        let xPos = marginLeft + (graphW / 6) * i;
+        let timeVal = (i * 0.1).toFixed(1);
+        graphCtx.fillText(timeVal, xPos, 25 + graphH + 6);
+      }
+
+      graphCtx.font = 'bold 12px sans-serif';
+      graphCtx.fillText("시간 (s)", marginLeft + graphW / 2, 25 + graphH + 20);
+
+      // 범례 박스
+      let boxX = marginLeft + graphW + 12;
+      let boxY = 25;
+      graphCtx.strokeStyle = '#d1d8e0';
+      graphCtx.fillStyle = '#ffffff';
+      graphCtx.lineWidth = 1.2;
+      graphCtx.fillRect(boxX, boxY, 68, 75);
+      graphCtx.strokeRect(boxX, boxY, 68, 75);
+
+      const legendItems = [
+        { label: "0.5 T", color: colorMap['N']['0.5'] },
+        { label: "1.0 T", color: colorMap['N']['1.0'] },
+        { label: "1.5 T", color: colorMap['N']['1.5'] }
+      ];
+
+      legendItems.forEach((item, idx) => {
+        let itemY = boxY + 15 + idx * 22;
+        graphCtx.fillStyle = item.color;
+        graphCtx.fillRect(boxX + 8, itemY - 5, 10, 10);
+
+        graphCtx.fillStyle = '#2c3e50';
+        graphCtx.font = 'bold 11px sans-serif';
+        graphCtx.textAlign = 'left';
+        graphCtx.textBaseline = 'middle';
+        graphCtx.fillText(item.label, boxX + 23, itemY);
+      });
+
+      Object.keys(savedGraphs).forEach(key => {
+        drawCustomLine(savedGraphs[key], marginLeft, graphW, centerY);
+      });
+
+      if (isRunning && currentGraphData.length > 1) {
+        let bKey = B.toFixed(1);
+        let tempObj = {
+          data: currentGraphData,
+          color: colorMap[polarity][bKey],
+          maxV: currentMaxV,
+          minV: currentMinV,
+          bKey: bKey
+        };
+        drawCustomLine(tempObj, marginLeft, graphW, centerY);
+      }
+
+      if (hoveredPoint) {
+        graphCtx.beginPath();
+        graphCtx.arc(hoveredPoint.x, hoveredPoint.y, 6, 0, Math.PI * 2);
+        graphCtx.fillStyle = '#ffffff';
+        graphCtx.fill();
+        graphCtx.strokeStyle = hoveredPoint.color;
+        graphCtx.lineWidth = 2.5;
+        graphCtx.stroke();
+
+        drawHoverTooltip(hoveredPoint.x, hoveredPoint.y - 12, `${hoveredPoint.t} s, ${hoveredPoint.v.toFixed(2)} V`, hoveredPoint.color);
+      }
+    }
+
+    function drawCustomLine(graphObj, marginLeft, graphW, centerY) {
+      let data = graphObj.data;
+      if (!data || data.length <= 1) return;
+
+      let step = graphW / 125;
+
+      graphCtx.beginPath();
+      graphCtx.strokeStyle = graphObj.color;
+      graphCtx.lineWidth = 2.2;
+
+      for (let i = 0; i < data.length; i++) {
+        let x = marginLeft + i * step;
+        let y = centerY - (data[i].v * 5.8);
+
+        if (i === 0) graphCtx.moveTo(x, y);
+        else graphCtx.lineTo(x, y);
+      }
+      graphCtx.stroke();
+
+      for (let i = 0; i < data.length; i += 4) {
+        let x = marginLeft + i * step;
+        let y = centerY - (data[i].v * 5.8);
+
+        graphCtx.beginPath();
+        graphCtx.arc(x, y, 2.5, 0, Math.PI * 2);
+        graphCtx.fillStyle = graphObj.color;
+        graphCtx.fill();
+
+        if (mousePos.x !== -1 && mousePos.y !== -1) {
+          let dist = Math.hypot(mousePos.x - x, mousePos.y - y);
+          if (dist < 8) {
+            hoveredPoint = {
+              x: x,
+              y: y,
+              t: data[i].t,
+              v: data[i].v,
+              color: graphObj.color
+            };
+          }
+        }
+      }
+
+      if (graphObj.maxV > 0.5) {
+        let maxIdx = data.findIndex(d => d.v === graphObj.maxV);
+        if (maxIdx !== -1) {
+          let px = marginLeft + maxIdx * step;
+          let py = centerY - (graphObj.maxV * 5.8);
+          drawPeakTooltip(px, py - 10, `${data[maxIdx].t} s, ${graphObj.maxV.toFixed(2)} V`, graphObj.color);
+        }
+      }
+
+      if (graphObj.minV < -0.5) {
+        let minIdx = data.findIndex(d => d.v === graphObj.minV);
+        if (minIdx !== -1) {
+          let px = marginLeft + minIdx * step;
+          let py = centerY - (graphObj.minV * 5.8);
+          drawPeakTooltip(px, py + 12, `${data[minIdx].t} s, ${graphObj.minV.toFixed(2)} V`, graphObj.color);
+        }
+      }
+    }
+
+    function drawPeakTooltip(x, y, text, color) {
+      graphCtx.font = 'bold 10px sans-serif';
+      let textWidth = graphCtx.measureText(text).width;
+      let pad = 4;
+      let boxW = textWidth + pad * 2;
+      let boxH = 15;
+
+      graphCtx.fillStyle = '#ffffff';
+      graphCtx.strokeStyle = color;
+      graphCtx.lineWidth = 1.5;
+      
+      graphCtx.fillRect(x - boxW / 2, y - boxH / 2, boxW, boxH);
+      graphCtx.strokeRect(x - boxW / 2, y - boxH / 2, boxW, boxH);
+
+      graphCtx.fillStyle = color;
+      graphCtx.textAlign = 'center';
+      graphCtx.textBaseline = 'middle';
+      graphCtx.fillText(text, x, y + 0.5);
+    }
+
+    function drawHoverTooltip(x, y, text, color) {
+      graphCtx.font = 'bold 11px sans-serif';
+      let textWidth = graphCtx.measureText(text).width;
+      let pad = 6;
+      let boxW = textWidth + pad * 2;
+      let boxH = 18;
+
+      graphCtx.fillStyle = '#1a2b4c';
+      graphCtx.strokeStyle = color;
+      graphCtx.lineWidth = 2;
+
+      let drawY = y < 35 ? y + 28 : y;
+
+      graphCtx.fillRect(x - boxW / 2, drawY - boxH / 2, boxW, boxH);
+      graphCtx.strokeRect(x - boxW / 2, drawY - boxH / 2, boxW, boxH);
+
+      graphCtx.fillStyle = '#ffffff';
+      graphCtx.textAlign = 'center';
+      graphCtx.textBaseline = 'middle';
+      graphCtx.fillText(text, x, drawY + 0.5);
+    }
+
+    initCanvasResolution();
+    updateVariables();
+    resetAll();
+    loop();
+  </script>
+</body>
+</html>
